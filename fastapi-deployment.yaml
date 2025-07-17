@@ -19,4 +19,6 @@ spec:
         image: kmsacr.azurecr.io/fastapi-demo:v1  # 여기 본인 ACR 이미지 주소
         ports:
         - containerPort: 80
-
+        env:
+        - name: GREETING_MESSAGE
+          value: "Hello from FastAPI on AKS via GitOps!"
