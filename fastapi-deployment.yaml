@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: fastapi-container
-        image: kmsacr.azurecr.io/fastapi-demo:v1  # ACR 이미지 주소
+        image: kmsacr.azurecr.io/fastapi-demo:v2  # ACR 이미지 주소
         ports:
         - containerPort: 80
         env:
