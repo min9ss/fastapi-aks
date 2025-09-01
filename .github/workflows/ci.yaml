@@ -1,5 +1,9 @@
 name: build-and-bump
 
+permissions:
+  contents: read
+  # (OIDC 안 쓸 거면 id-token은 없어도 됩니다. 혹시 OIDC 쓸 땐 id-token: write 필요)
+
 on:
   push:
     branches: [ "main" ]
@@ -35,6 +39,7 @@ jobs:
       - name: Azure Login
         uses: azure/login@v2
         with:
+          auth-type: SERVICE_PRINCIPAL
           client-id: ${{ secrets.AZ_CLIENT_ID }}
           tenant-id: ${{ secrets.AZ_TENANT_ID }}
           subscription-id: ${{ secrets.AZ_SUBSCRIPTION_ID }}
