@@ -98,14 +98,15 @@ jobs:
           git remote set-url origin "$REMOTE"
           git fetch origin
 
-          # 변경 없으면 PR 스킵
           if git diff --quiet -- ${{ env.VALUES_FILE }}; then
             echo "SKIP_PR=true" >> $GITHUB_ENV
             exit 0
           fi
 
           BRANCH=bump/${{ env.IMAGE_NAME }}-${{ env.NEW_TAG }}-${GITHUB_RUN_ID}
-          git config user.name  "github-actions[bot]"
+          echo "PR_BRANCH=$BRANCH" >> $GITHUB_ENV
+
+          git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -b "$BRANCH"
           git add ${{ env.VALUES_FILE }}
@@ -118,10 +119,10 @@ jobs:
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.DEPLOY_REPO_TOKEN }}
-          branch: bump/${{ env.IMAGE_NAME }}-${{ env.NEW_TAG }}-${{ github.run_id }}
+          path: deploy-repo
+          branch: ${{ env.PR_BRANCH }}
           base: main
           title: "bump ${{ env.IMAGE_NAME }} to ${{ env.NEW_TAG }}"
           body: |
             - Image: `${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ env.NEW_TAG }}`
             - Updated values file: `${{ env.VALUES_FILE }}`
-
