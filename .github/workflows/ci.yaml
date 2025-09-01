@@ -13,37 +13,39 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-      # 1. 앱 레포 체크아웃 (fastapi-aks)
+      # 1) 앱 레포 체크아웃
       - name: Checkout app repo
         uses: actions/checkout@v4
 
-      # 2. Azure 로그인
+      # 2) Azure 로그인 (4개 시크릿 방식)
       - name: Azure Login
         uses: azure/login@v2
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          client-id: ${{ secrets.AZ_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZ_TENANT_ID }}
+          subscription-id: ${{ secrets.AZ_SUBSCRIPTION_ID }}
+          client-secret: ${{ secrets.AZ_CLIENT_SECRET }}
 
-      # 3. ACR 로그인
+      # 3) ACR 로그인
       - name: ACR Login
         run: az acr login --name ${{ secrets.ACR_NAME }}
 
-      # 4. 이미지 빌드 & 푸시
+      # 4) 이미지 빌드 & 푸시
       - name: Build and Push Docker Image
         run: |
           SHA=${GITHUB_SHA::7}
-          IMAGE=${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:$SHA
           echo "NEW_TAG=$SHA" >> $GITHUB_ENV
 
+          IMAGE=${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:$SHA
           docker build -t $IMAGE .
           docker push $IMAGE
 
-          # latest 태그도 같이 푸시 (선택)
+          # (선택) latest 태그도 푸시
           docker tag $IMAGE ${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:latest
           docker push ${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:latest
 
-      # 5. 배포 레포 체크아웃 (deploy-repo)
+      # 5) 배포 레포 체크아웃
       - name: Checkout deploy repo
         uses: actions/checkout@v4
         with:
@@ -51,36 +53,47 @@ jobs:
           token: ${{ secrets.DEPLOY_REPO_TOKEN }}
           path: deploy-repo
 
-      # 6. values.yaml 수정
+      # 6) values.yaml 수정
       - name: Update values.yaml
         working-directory: deploy-repo
         run: |
           sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64
           sudo chmod +x /usr/local/bin/yq
-
           yq -i '.image.tag = env(NEW_TAG)' ${{ env.VALUES_FILE }}
-
           echo "Changed values.yaml:"
           cat ${{ env.VALUES_FILE }}
 
-      # 7. 변경 커밋 & 브랜치 푸시
+      # 7) 커밋 & 푸시 (git 128 방지: origin을 PAT로 고정 + 유니크 브랜치)
       - name: Commit and Push changes
         working-directory: deploy-repo
+        env:
+          REMOTE: https://${{ secrets.DEPLOY_REPO_TOKEN }}@github.com/${{ env.DEPLOY_REPO }}.git
         run: |
-          BRANCH=bump/${{ env.IMAGE_NAME }}-${{ env.NEW_TAG }}
-          git config user.name "github-actions[bot]"
+          set -e
+          git remote set-url origin "$REMOTE"
+          git fetch origin
+
+          # 변경 없으면 PR 스킵
+          if git diff --quiet -- ${{ env.VALUES_FILE }}; then
+            echo "SKIP_PR=true" >> $GITHUB_ENV
+            exit 0
+          fi
+
+          BRANCH=bump/${{ env.IMAGE_NAME }}-${{ env.NEW_TAG }}-${GITHUB_RUN_ID}
+          git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -b $BRANCH
+          git checkout -b "$BRANCH"
           git add ${{ env.VALUES_FILE }}
           git commit -m "bump ${{ env.IMAGE_NAME }} to ${{ env.NEW_TAG }}"
-          git push -u origin $BRANCH
+          git push origin "$BRANCH"
 
-      # 8. PR 생성
+      # 8) PR 생성 (스킵 조건 반영)
       - name: Create Pull Request
+        if: env.SKIP_PR != 'true'
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.DEPLOY_REPO_TOKEN }}
-          branch: bump/${{ env.IMAGE_NAME }}-${{ env.NEW_TAG }}
+          branch: bump/${{ env.IMAGE_NAME }}-${{ env.NEW_TAG }}-${{ github.run_id }}
           base: main
           title: "bump ${{ env.IMAGE_NAME }} to ${{ env.NEW_TAG }}"
           body: |
