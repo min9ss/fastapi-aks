@@ -39,7 +39,7 @@ jobs:
           tenant-id: ${{ secrets.AZ_TENANT_ID }}
           subscription-id: ${{ secrets.AZ_SUBSCRIPTION_ID }}
           client-secret: ${{ secrets.AZ_CLIENT_SECRET }}
-
+          
       # 3) ACR 로그인
       - name: ACR Login
         run: az acr login --name ${{ secrets.ACR_NAME }}
