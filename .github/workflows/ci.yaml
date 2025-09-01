@@ -18,6 +18,19 @@ jobs:
       - name: Checkout app repo
         uses: actions/checkout@v4
 
+      - name: Debug secrets presence (values hidden)
+        run: |
+          missing=0
+          if [ -z "${{ secrets.AZ_CLIENT_ID }}" ]; then
+            echo "::error::AZ_CLIENT_ID is MISSING"; missing=1; else echo "AZ_CLIENT_ID is present"; fi
+          if [ -z "${{ secrets.AZ_CLIENT_SECRET }}" ]; then
+            echo "::error::AZ_CLIENT_SECRET is MISSING"; missing=1; else echo "AZ_CLIENT_SECRET is present"; fi
+          if [ -z "${{ secrets.AZ_TENANT_ID }}" ]; then
+            echo "::error::AZ_TENANT_ID is MISSING"; missing=1; else echo "AZ_TENANT_ID is present"; fi
+          if [ -z "${{ secrets.AZ_SUBSCRIPTION_ID }}" ]; then
+            echo "::error::AZ_SUBSCRIPTION_ID is MISSING"; missing=1; else echo "AZ_SUBSCRIPTION_ID is present"; fi
+          exit $missing
+
       # 2) Azure 로그인 (4개 시크릿 방식)
       - name: Azure Login
         uses: azure/login@v2
