@@ -1,0 +1,89 @@
+name: build-and-bump
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+env:
+  IMAGE_NAME: fastapi-demo
+  DEPLOY_REPO: min9ss/deploy-repo
+  VALUES_FILE: envs/dev/values.yaml
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. 앱 레포 체크아웃 (fastapi-aks)
+      - name: Checkout app repo
+        uses: actions/checkout@v4
+
+      # 2. Azure 로그인
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      # 3. ACR 로그인
+      - name: ACR Login
+        run: az acr login --name ${{ secrets.ACR_NAME }}
+
+      # 4. 이미지 빌드 & 푸시
+      - name: Build and Push Docker Image
+        run: |
+          SHA=${GITHUB_SHA::7}
+          IMAGE=${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:$SHA
+          echo "NEW_TAG=$SHA" >> $GITHUB_ENV
+
+          docker build -t $IMAGE .
+          docker push $IMAGE
+
+          # latest 태그도 같이 푸시 (선택)
+          docker tag $IMAGE ${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:latest
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:latest
+
+      # 5. 배포 레포 체크아웃 (deploy-repo)
+      - name: Checkout deploy repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.DEPLOY_REPO }}
+          token: ${{ secrets.DEPLOY_REPO_TOKEN }}
+          path: deploy-repo
+
+      # 6. values.yaml 수정
+      - name: Update values.yaml
+        working-directory: deploy-repo
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+          yq -i '.image.tag = env(NEW_TAG)' ${{ env.VALUES_FILE }}
+
+          echo "Changed values.yaml:"
+          cat ${{ env.VALUES_FILE }}
+
+      # 7. 변경 커밋 & 브랜치 푸시
+      - name: Commit and Push changes
+        working-directory: deploy-repo
+        run: |
+          BRANCH=bump/${{ env.IMAGE_NAME }}-${{ env.NEW_TAG }}
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b $BRANCH
+          git add ${{ env.VALUES_FILE }}
+          git commit -m "bump ${{ env.IMAGE_NAME }} to ${{ env.NEW_TAG }}"
+          git push -u origin $BRANCH
+
+      # 8. PR 생성
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.DEPLOY_REPO_TOKEN }}
+          branch: bump/${{ env.IMAGE_NAME }}-${{ env.NEW_TAG }}
+          base: main
+          title: "bump ${{ env.IMAGE_NAME }} to ${{ env.NEW_TAG }}"
+          body: |
+            - Image: `${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ env.NEW_TAG }}`
+            - Updated values file: `${{ env.VALUES_FILE }}`
+
